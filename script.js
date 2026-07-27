@@ -217,10 +217,78 @@ function bindEvents(question) {
       checkbox.addEventListener("change", () => {
         if (error) error.style.display = "none";
       });
+      try {
+        // log checkbox events for mobile auditing
+        window.__mobileAudit = window.__mobileAudit || [];
+        function auditPushChk(ev, meta) {
+          try { window.__mobileAudit.push({ time: Date.now(), event: ev, meta }); console.log('[mobile-audit]', ev, meta); } catch(e){console.error(e);} 
+        }
+        if (!checkbox.dataset.auditAttached) {
+          ['click','touchstart','touchend','change'].forEach((evName) => {
+            checkbox.addEventListener(evName, function (ev) { auditPushChk(`checkbox-${evName}`, { type: ev.type, isTrusted: ev.isTrusted }); }, { passive: true });
+          });
+          checkbox.dataset.auditAttached = '1';
+        }
+      } catch (err) {
+        console.error('[mobile-audit] checkbox attach failed', err);
+      }
     }
 
+    // Improve mobile compatibility: attach multiple, idempotent handlers
     if (submitBtn) {
-      submitBtn.addEventListener("click", handleConsentSubmit);
+      try {
+        // create global audit array for debugging (kept until root cause found)
+        window.__mobileAudit = window.__mobileAudit || [];
+
+        function auditPush(ev, meta) {
+          try {
+            const entry = { time: Date.now(), event: ev, meta };
+            window.__mobileAudit.push(entry);
+            // also mirror to console so it appears in remote logs
+            console.log('[mobile-audit]', entry);
+          } catch (e) {
+            console.error('[mobile-audit] push failed', e);
+          }
+        }
+
+        const handler = function (e) {
+          if (e && typeof e.preventDefault === 'function') e.preventDefault();
+          auditPush('submit-activation', { type: e && e.type, pointerType: e && e.pointerType });
+          // guard: ensure only one submission proceeds
+          if (state.isSubmitting) {
+            auditPush('submit-ignored-while-submitting', {});
+            return;
+          }
+          try {
+            handleConsentSubmit();
+          } catch (err) {
+            console.error('[mobile-audit] handler error', err);
+          }
+        };
+
+        if (!submitBtn.dataset.handlerAttached) {
+          // attach both pointer and legacy touch/click events to maximize coverage
+          submitBtn.addEventListener('pointerdown', handler);
+          submitBtn.addEventListener('click', handler);
+          // include touchend as some browsers trigger it instead of click
+          submitBtn.addEventListener('touchstart', handler, { passive: false });
+          submitBtn.addEventListener('touchend', handler, { passive: false });
+          submitBtn.dataset.handlerAttached = '1';
+        }
+
+        // Add lightweight event logging on button to inspect event order
+        ['click', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach((evName) => {
+          const loggerKey = `log_${evName}`;
+          if (!submitBtn.dataset[loggerKey]) {
+            submitBtn.addEventListener(evName, function (ev) {
+              auditPush(`btn-${evName}`, { type: ev.type, pointerType: ev.pointerType, isTrusted: ev.isTrusted });
+            }, { passive: true });
+            submitBtn.dataset[loggerKey] = '1';
+          }
+        });
+      } catch (err) {
+        console.error('[mobile-audit] failed to attach handlers', err);
+      }
     }
     return;
   }
@@ -336,8 +404,17 @@ async function handleConsentSubmit() {
       error.textContent = "Você precisa aceitar a política de privacidade para enviar.";
       error.style.display = "block";
     }
+    try {
+      if (checkbox) {
+        try { checkbox.focus({ preventScroll: false }); } catch(e) { checkbox.focus(); }
+        try { checkbox.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(e) { /* ignore */ }
+      }
+    } catch (e) {
+      console.error('[form] falha ao focar checkbox', e);
+    }
     return;
   }
+  
 
   state.responses.consent = true;
 

@@ -264,6 +264,13 @@ input {
   margin-top: 8px;
 }
 
+/* Increase tappable area for consent label on mobile without changing layout */
+.consent-row label {
+  display: inline-block;
+  padding: 6px 8px;
+  touch-action: manipulation;
+}
+
 .consent-row input {
   margin-top: 4px;
   accent-color: var(--accent);
