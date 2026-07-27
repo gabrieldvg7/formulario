@@ -12,12 +12,16 @@ function getCredentials() {
     // prefer credentials provided as JSON string in env
     const raw = String(googleServiceAccountCredentials).trim();
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      console.log('[google-sheets] Using GOOGLE_SERVICE_ACCOUNT_CREDENTIALS from environment');
+      return parsed;
     } catch (err) {
       // try base64 decode (some panels require encoding)
       try {
         const decoded = Buffer.from(raw, 'base64').toString('utf8');
-        return JSON.parse(decoded);
+        const parsed2 = JSON.parse(decoded);
+        console.log('[google-sheets] Using GOOGLE_SERVICE_ACCOUNT_CREDENTIALS (base64) from environment');
+        return parsed2;
       } catch (err2) {
         throw new Error('GOOGLE_SERVICE_ACCOUNT_CREDENTIALS está inválido. Insira o JSON da Service Account ou base64 do JSON.');
       }
@@ -35,6 +39,7 @@ function getCredentials() {
 
     try {
       const content = fs.readFileSync(resolvedPath, 'utf8');
+      console.log('[google-sheets] Using GOOGLE_SERVICE_ACCOUNT_PATH at', resolvedPath);
       return JSON.parse(content);
     } catch (error) {
       throw new Error('Não foi possível ler ou parsear o arquivo de credenciais da Service Account.');
