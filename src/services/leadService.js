@@ -19,107 +19,121 @@ const HEADERS = [
 
 async function ensureSheetStructure(sheets) {
   const spreadsheetId = getSpreadsheetId();
-  const metadata = await sheets.spreadsheets.get({ spreadsheetId });
-  const sheet = metadata.data.sheets.find((item) => item.properties.title === 'Leads');
+  console.log('[lead-service] Validando estrutura da aba Leads');
 
-  if (!sheet) {
-    throw new Error('A aba Leads não foi encontrada na planilha informada.');
-  }
+  try {
+    const metadata = await sheets.spreadsheets.get({ spreadsheetId });
+    const sheet = metadata.data.sheets.find((item) => item.properties.title === 'Leads');
 
-  const range = 'Leads!A1:A1';
-  const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
-  const firstRow = response.data.values?.[0] || [];
+    if (!sheet) {
+      throw new Error('A aba Leads não foi encontrada na planilha informada.');
+    }
 
-  if (firstRow.length === 0) {
-    const headerRange = 'Leads!A1:M1';
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: headerRange,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [HEADERS]
-      }
-    });
+    const range = 'Leads!A1:M1';
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+    const firstRow = response.data.values?.[0] || [];
+    const hasExpectedHeaders = firstRow.length >= HEADERS.length && firstRow.every((value, index) => value === HEADERS[index]);
 
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        requests: [
-          {
-            updateSheetProperties: {
-              properties: {
-                sheetId: sheet.properties.sheetId,
-                gridProperties: {
-                  frozenRowCount: 1
-                }
-              },
-              fields: 'gridProperties.frozenRowCount'
-            }
-          },
-          {
-            repeatCell: {
-              range: {
-                sheetId: sheet.properties.sheetId,
-                startRowIndex: 0,
-                endRowIndex: 1,
-                startColumnIndex: 0,
-                endColumnIndex: HEADERS.length
-              },
-              cell: {
-                userEnteredFormat: {
-                  textFormat: {
-                    bold: true
-                  },
-                  horizontalAlignment: 'CENTER',
-                  verticalAlignment: 'MIDDLE',
-                  backgroundColor: {
-                    red: 0.016,
-                    green: 0.686,
-                    blue: 1
-                  },
-                  textFormat: {
-                    foregroundColor: {
-                      red: 1,
-                      green: 1,
-                      blue: 1
-                    },
-                    bold: true
+    if (!hasExpectedHeaders) {
+      console.log('[lead-service] Cabeçalhos ausentes ou incompletos; restaurando a linha de cabeçalhos.', { firstRow });
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [HEADERS]
+        }
+      });
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheet.properties.sheetId,
+                  gridProperties: {
+                    frozenRowCount: 1
                   }
-                }
-              },
-              fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'
-            }
-          },
-          {
-            autoResizeDimensions: {
-              dimensions: {
-                sheetId: sheet.properties.sheetId,
-                dimension: 'COLUMNS',
-                startIndex: 0,
-                endIndex: HEADERS.length
+                },
+                fields: 'gridProperties.frozenRowCount'
               }
-            }
-          },
-          {
-            setBasicFilter: {
-              filter: {
+            },
+            {
+              repeatCell: {
                 range: {
                   sheetId: sheet.properties.sheetId,
                   startRowIndex: 0,
-                  endRowIndex: 1000,
+                  endRowIndex: 1,
                   startColumnIndex: 0,
                   endColumnIndex: HEADERS.length
+                },
+                cell: {
+                  userEnteredFormat: {
+                    textFormat: {
+                      bold: true
+                    },
+                    horizontalAlignment: 'CENTER',
+                    verticalAlignment: 'MIDDLE',
+                    backgroundColor: {
+                      red: 0.016,
+                      green: 0.686,
+                      blue: 1
+                    },
+                    textFormat: {
+                      foregroundColor: {
+                        red: 1,
+                        green: 1,
+                        blue: 1
+                      },
+                      bold: true
+                    }
+                  }
+                },
+                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)'
+              }
+            },
+            {
+              autoResizeDimensions: {
+                dimensions: {
+                  sheetId: sheet.properties.sheetId,
+                  dimension: 'COLUMNS',
+                  startIndex: 0,
+                  endIndex: HEADERS.length
+                }
+              }
+            },
+            {
+              setBasicFilter: {
+                filter: {
+                  range: {
+                    sheetId: sheet.properties.sheetId,
+                    startRowIndex: 0,
+                    endRowIndex: 1000,
+                    startColumnIndex: 0,
+                    endColumnIndex: HEADERS.length
+                  }
                 }
               }
             }
-          }
-        ]
-      }
-    });
+          ]
+        }
+      });
+    } else {
+      console.log('[lead-service] Estrutura da planilha já está correta.', { firstRow });
+    }
+  } catch (error) {
+    console.error('[lead-service] Falha ao validar a estrutura da planilha', error);
+    const wrappedError = new Error('Não foi possível preparar a planilha do Google Sheets para o envio.');
+    wrappedError.statusCode = 502;
+    wrappedError.details = error.message || 'Erro ao validar a estrutura da sheet.';
+    throw wrappedError;
   }
 }
 
 async function createLeadService(lead) {
+  console.log('[lead-service] Iniciando criação do lead');
   const sheets = await getSheetsClient();
   const spreadsheetId = getSpreadsheetId();
 
@@ -141,14 +155,24 @@ async function createLeadService(lead) {
     'Qualificado'
   ];
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: 'Leads!A:M',
-    valueInputOption: 'USER_ENTERED',
-    requestBody: {
-      values: [row]
-    }
-  });
+  console.log('[lead-service] Gravando linha na planilha', { row });
+
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: 'Leads!A:M',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [row]
+      }
+    });
+  } catch (error) {
+    console.error('[lead-service] Falha ao gravar lead na planilha', error);
+    const wrappedError = new Error('Falha ao gravar o lead na planilha do Google Sheets.');
+    wrappedError.statusCode = 502;
+    wrappedError.details = error.message || 'Erro desconhecido ao gravar a linha.';
+    throw wrappedError;
+  }
 
   return { success: true, leadId: row[0] };
 }

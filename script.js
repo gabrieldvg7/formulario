@@ -323,6 +323,10 @@ function handleChoiceSelect(question, value) {
   goForward();
 }
 
+function getSubmissionEndpoint() {
+  return new URL('/lead', window.location.href).toString();
+}
+
 async function handleConsentSubmit() {
   const checkbox = document.getElementById("consent-checkbox");
   const error = document.getElementById("field-error");
@@ -345,14 +349,28 @@ async function handleConsentSubmit() {
   state.submitError = null;
   render();
 
+  const payloadToSend = mapResponsesToPayload();
+  console.log("[form] Enviando lead", payloadToSend);
+
   try {
-    const response = await fetch('http://localhost:3000/lead', {
+    const endpoint = getSubmissionEndpoint();
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(mapResponsesToPayload())
+      body: JSON.stringify(payloadToSend)
     });
 
-    const payload = await response.json().catch(() => ({}));
+    const responseText = await response.text();
+    let payload = {};
+
+    try {
+      payload = responseText ? JSON.parse(responseText) : {};
+    } catch (parseError) {
+      console.error("[form] Falha ao interpretar resposta do backend", parseError);
+      payload = {};
+    }
+
+    console.log("[form] Resposta do envio", { status: response.status, payload });
 
     if (!response.ok || !payload.success) {
       throw new Error(payload.message || 'Erro ao enviar o lead.');
@@ -360,9 +378,10 @@ async function handleConsentSubmit() {
 
     trackMetaEvent('Lead');
     state.screen = 'thanks';
-    console.log('Respostas do formulário:', state.responses);
+    console.log('[form] Respostas do formulário:', state.responses);
     render();
   } catch (error) {
+    console.error('[form] Falha ao enviar lead', error);
     state.isSubmitting = false;
     state.submitError = error.message || 'Não foi possível enviar suas informações.';
     render();

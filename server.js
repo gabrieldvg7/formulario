@@ -21,10 +21,11 @@ app.get('/', (_req, res) => {
 app.use(express.static(frontendRoot));
 
 app.use((err, _req, res, _next) => {
-  console.error('[server]', err.message || err);
+  console.error('[server] Erro não tratado', err);
   res.status(err.statusCode || 500).json({
     success: false,
-    message: err.message || 'Erro interno do servidor.'
+    message: err.message || 'Erro interno do servidor.',
+    details: err.details || 'Ocorreu um erro inesperado ao processar a requisição.'
   });
 });
 
