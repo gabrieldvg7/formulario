@@ -9,22 +9,58 @@ const {
 
 function getCredentials() {
   if (googleServiceAccountCredentials && String(googleServiceAccountCredentials).trim()) {
-    // prefer credentials provided as JSON string in env
-    const raw = String(googleServiceAccountCredentials).trim();
+    const raw = String(googleServiceAccountCredentials);
+    console.log('[google-sheets] GOOGLE_SERVICE_ACCOUNT_CREDENTIALS env exists:', true);
+    console.log('[google-sheets] GOOGLE_SERVICE_ACCOUNT_CREDENTIALS length:', raw.length);
+
+    const trimmedRaw = raw.trim();
+    const cleanedBase64 = trimmedRaw.replace(/\s+/g, '');
+    const looksLikeJson = trimmedRaw.startsWith('{') || trimmedRaw.startsWith('[');
+    const looksLikeBase64 = /^[A-Za-z0-9+/=]+$/.test(cleanedBase64) && cleanedBase64.length % 4 === 0;
+
+    function parseJson(text) {
+      const result = JSON.parse(text);
+      if (typeof result === 'string') {
+        return JSON.parse(result);
+      }
+      return result;
+    }
+
     try {
-      const parsed = JSON.parse(raw);
-      console.log('[google-sheets] Using GOOGLE_SERVICE_ACCOUNT_CREDENTIALS from environment');
-      return parsed;
-    } catch (err) {
-      // try base64 decode (some panels require encoding)
+      if (looksLikeJson) {
+        const parsed = parseJson(trimmedRaw);
+        console.log('[google-sheets] Detected JSON format in GOOGLE_SERVICE_ACCOUNT_CREDENTIALS');
+        return parsed;
+      }
+
+      if (looksLikeBase64) {
+        const decoded = Buffer.from(cleanedBase64, 'base64').toString('utf8');
+        const parsed2 = parseJson(decoded);
+        console.log('[google-sheets] Detected Base64 format in GOOGLE_SERVICE_ACCOUNT_CREDENTIALS');
+        return parsed2;
+      }
+
+      // fallback: try raw JSON parse and then base64 decode if necessary
       try {
-        const decoded = Buffer.from(raw, 'base64').toString('utf8');
-        const parsed2 = JSON.parse(decoded);
-        console.log('[google-sheets] Using GOOGLE_SERVICE_ACCOUNT_CREDENTIALS (base64) from environment');
+        const parsed = parseJson(trimmedRaw);
+        console.log('[google-sheets] Fallback parsed GOOGLE_SERVICE_ACCOUNT_CREDENTIALS as raw JSON');
+        return parsed;
+      } catch (err) {
+        console.log('[google-sheets] Raw JSON parse failed, trying Base64 decode');
+      }
+
+      try {
+        const decoded = Buffer.from(cleanedBase64, 'base64').toString('utf8');
+        const parsed2 = parseJson(decoded);
+        console.log('[google-sheets] Fallback parsed GOOGLE_SERVICE_ACCOUNT_CREDENTIALS as Base64');
         return parsed2;
       } catch (err2) {
+        console.error('[google-sheets] ERROR parsing GOOGLE_SERVICE_ACCOUNT_CREDENTIALS at Base64 fallback:', err2.message);
         throw new Error('GOOGLE_SERVICE_ACCOUNT_CREDENTIALS está inválido. Insira o JSON da Service Account ou base64 do JSON.');
       }
+    } catch (err) {
+      console.error('[google-sheets] ERROR parsing GOOGLE_SERVICE_ACCOUNT_CREDENTIALS:', err.message);
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_CREDENTIALS está inválido. Insira o JSON da Service Account ou base64 do JSON.');
     }
   }
 
